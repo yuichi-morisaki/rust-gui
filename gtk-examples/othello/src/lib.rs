@@ -11,9 +11,50 @@ pub struct Game {
 
 struct State {
     board: Board,
-    turn: Side,
+    side: Side,
     parent: RefCell<Weak<State>>,
     children: RefCell<HashMap<Position, Rc<State>>>,
+}
+
+impl State {
+    fn new(board: Board, side: Side) -> State {
+        State {
+            board,
+            side,
+            parent: RefCell::new(Weak::new()),
+            children: RefCell::new(HashMap::new()),
+        }
+    }
+
+    fn board(&self) -> &Board {
+        &self.board
+    }
+
+    fn side(&self) -> Side {
+        self.side
+    }
+
+    fn set_parent(&self, state: Rc<State>) {
+        *self.parent.borrow_mut() = Rc::downgrade(&state);
+    }
+
+    fn get_parent(&self) -> Option<Rc<State>> {
+        self.parent.borrow().upgrade()
+    }
+
+    fn insert_child(&self, pos: Position, state: Rc<State>) {
+        self.children.borrow_mut().insert(pos, state);
+    }
+
+    fn get_child(&self, pos: Position) -> Option<Rc<State>> {
+        let children = self.children.borrow();
+        let state = children.get(&pos);
+        if state.is_none() {
+            None
+        } else {
+            Some(Rc::clone(state.as_ref().unwrap()))
+        }
+    }
 }
 
 struct Board {
@@ -158,6 +199,13 @@ impl PartialEq for Disk {
 enum Side {
     Dark = 0,
     Light = 1,
+}
+
+fn change_turn(current: Side) -> Side {
+    match current {
+        Side::Dark => Side::Light,
+        Side::Light => Side::Dark,
+    }
 }
 
 // --------------------------------------------------------------------
@@ -469,7 +517,76 @@ mod tests {
 
     // --------------------------------------------------------
 
+    use super::change_turn;
     use super::Side;
+    use super::State;
+    use std::rc::Rc;
+
+    #[test]
+    fn state_new() {
+        let board = Board::new();
+        let side = Side::Dark;
+        let state = State::new(board, side);
+
+        let root = Rc::new(state);
+        let current = Rc::clone(&root);
+
+        let pos = Position::from(('f', 5));
+        let board = current.board().try_place(pos, side).unwrap();
+        let side = change_turn(side);
+
+        current.insert_child(pos, Rc::new(State::new(board, side)));
+        current
+            .get_child(pos)
+            .unwrap()
+            .set_parent(Rc::clone(&current));
+
+        let current = current.get_child(pos).unwrap();
+
+        let output = "    \
+    a   b   c   d   e   f   g   h
+  +---+---+---+---+---+---+---+---+
+1 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   | o | x |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   | x | o |   |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+8 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+";
+        assert_eq!(root.board().to_string(), output);
+
+        let output = "    \
+    a   b   c   d   e   f   g   h
+  +---+---+---+---+---+---+---+---+
+1 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+2 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+3 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+4 |   |   |   | o | x |   |   |   |
+  +---+---+---+---+---+---+---+---+
+5 |   |   |   | x | x | x |   |   |
+  +---+---+---+---+---+---+---+---+
+6 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+7 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+8 |   |   |   |   |   |   |   |   |
+  +---+---+---+---+---+---+---+---+
+";
+        assert_eq!(current.board().to_string(), output);
+    }
 
     // --------------------------------------------------------
 }
