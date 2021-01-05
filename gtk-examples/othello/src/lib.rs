@@ -136,6 +136,10 @@ impl Game {
             false
         }
     }
+
+    pub fn get_disk_at(&self, pos: Position) -> Option<Disk> {
+        self.current.board().get_disk(pos)
+    }
 }
 
 struct State {
@@ -308,7 +312,7 @@ impl fmt::Display for Board {
 
 #[repr(u8)]
 #[derive(Clone, Copy)]
-enum Disk {
+pub enum Disk {
     Black = 0,
     White = 1,
 }
