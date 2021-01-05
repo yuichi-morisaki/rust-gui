@@ -4,16 +4,145 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::{Rc, Weak};
 
+pub enum GameStatus {
+    GameOver(u8, u8),
+    PassBack(u8, u8, Side),
+    Continue(u8, u8, Side),
+}
+
 pub struct Game {
     root: Rc<State>,
     current: Rc<State>,
+}
+
+impl Game {
+    pub fn new() -> Game {
+        let board = Board::new();
+        let side = Side::Dark;
+        let state = State::new(board, side);
+
+        let root = Rc::new(state);
+        let current = Rc::clone(&root);
+
+        Game { root, current }
+    }
+
+    pub fn new_game(&mut self) {
+        self.current = Rc::clone(&self.root);
+    }
+
+    pub fn prepare(&mut self) -> GameStatus {
+        self.gen_next_moves();
+
+        let (black, white) = self.count();
+        if black + white == 64 {
+            return GameStatus::GameOver(black, white);
+        }
+
+        if self.pass_back() {
+            self.gen_next_moves();
+            if self.pass_back() {
+                GameStatus::GameOver(black, white)
+            } else {
+                let side = self.current.side();
+                GameStatus::PassBack(black, white, side)
+            }
+        } else {
+            let side = self.current.side();
+            GameStatus::Continue(black, white, side)
+        }
+    }
+
+    pub fn render(&self) {
+        let board = self.current.board();
+        println!("{}", board);
+    }
+
+    fn count(&self) -> (u8, u8) {
+        let board = self.current.board();
+        let mut black = 0;
+        let mut white = 0;
+
+        for col in 'a'..='h' {
+            for row in 1..=8 {
+                let pos = Position::from((col, row));
+                match board.get_disk(pos) {
+                    None => (),
+                    Some(Disk::Black) => black += 1,
+                    Some(Disk::White) => white += 1,
+                }
+            }
+        }
+
+        (black, white)
+    }
+
+    pub fn undo(&mut self) {
+        if let Some(state) = self.current.get_parent() {
+            self.current = state;
+        }
+    }
+
+    fn gen_next_moves(&self) {
+        if self.current.has_children() {
+            return;
+        }
+
+        let board = self.current.board();
+        let side = self.current.side();
+        let next_side = change_turn(side);
+
+        for col in 'a'..='h' {
+            for row in 1i8..=8 {
+                let pos = Position::from((col, row));
+                if let Some(board) = board.try_place(pos, side) {
+                    self.current.insert_child(
+                        Some(pos),
+                        Rc::new(State::new(board, next_side)),
+                    );
+                    self.current
+                        .get_child(Some(pos))
+                        .unwrap()
+                        .set_parent(Rc::clone(&self.current));
+                }
+            }
+        }
+
+        if !self.current.has_children() {
+            let board = *self.current.board();
+            self.current
+                .insert_child(None, Rc::new(State::new(board, next_side)));
+            self.current
+                .get_child(None)
+                .unwrap()
+                .set_parent(Rc::clone(&self.current));
+        }
+    }
+
+    pub fn place(&mut self, pos: Position) -> bool {
+        if let Some(state) = self.current.get_child(Some(pos)) {
+            self.current = state;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn pass_back(&mut self) -> bool {
+        if let Some(state) = self.current.get_child(None) {
+            self.current = state;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 struct State {
     board: Board,
     side: Side,
     parent: RefCell<Weak<State>>,
-    children: RefCell<HashMap<Position, Rc<State>>>,
+    children: RefCell<HashMap<Option<Position>, Rc<State>>>,
 }
 
 impl State {
@@ -42,11 +171,11 @@ impl State {
         self.parent.borrow().upgrade()
     }
 
-    fn insert_child(&self, pos: Position, state: Rc<State>) {
+    fn insert_child(&self, pos: Option<Position>, state: Rc<State>) {
         self.children.borrow_mut().insert(pos, state);
     }
 
-    fn get_child(&self, pos: Position) -> Option<Rc<State>> {
+    fn get_child(&self, pos: Option<Position>) -> Option<Rc<State>> {
         let children = self.children.borrow();
         let state = children.get(&pos);
         if state.is_none() {
@@ -55,8 +184,13 @@ impl State {
             Some(Rc::clone(state.as_ref().unwrap()))
         }
     }
+
+    fn has_children(&self) -> bool {
+        self.children.borrow().len() > 0
+    }
 }
 
+#[derive(Clone, Copy)]
 struct Board {
     disks: [Option<Disk>; 100],
 }
@@ -109,16 +243,7 @@ impl Board {
             return None;
         }
 
-        let mut board = Board::new();
-        for col in 'a'..='h' {
-            for row in 1i8..=8 {
-                let pos = Position::from((col, row));
-                if let Some(disk) = self.get_disk(pos) {
-                    board.set_disk(pos, disk);
-                }
-            }
-        }
-
+        let mut board = *self;
         board.set_disk(pos, current);
         for pos in positions {
             board.set_disk(pos, current);
@@ -196,7 +321,7 @@ impl PartialEq for Disk {
 
 #[repr(u8)]
 #[derive(Clone, Copy)]
-enum Side {
+pub enum Side {
     Dark = 0,
     Light = 1,
 }
@@ -211,7 +336,7 @@ fn change_turn(current: Side) -> Side {
 // --------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
-struct Position {
+pub struct Position {
     col: Column,
     row: Row,
 }
@@ -451,7 +576,6 @@ mod tests {
     // --------------------------------------------------------
 
     use super::Board;
-    use super::Disk;
 
     #[test]
     fn board_new() {
@@ -535,13 +659,13 @@ mod tests {
         let board = current.board().try_place(pos, side).unwrap();
         let side = change_turn(side);
 
-        current.insert_child(pos, Rc::new(State::new(board, side)));
+        current.insert_child(Some(pos), Rc::new(State::new(board, side)));
         current
-            .get_child(pos)
+            .get_child(Some(pos))
             .unwrap()
             .set_parent(Rc::clone(&current));
 
-        let current = current.get_child(pos).unwrap();
+        let current = current.get_child(Some(pos)).unwrap();
 
         let output = "    \
     a   b   c   d   e   f   g   h
