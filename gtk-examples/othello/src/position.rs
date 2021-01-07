@@ -1,62 +1,34 @@
 use std::hash::{Hash, Hasher};
+use std::ops;
 
-#[derive(Clone, Copy)]
+#[derive(Debug)]
 pub struct Position {
     col: Column,
     row: Row,
 }
 
 impl Position {
-    pub fn col(&self) -> i8 {
-        self.col.index()
+    pub fn new(col: char, row: usize) -> Position {
+        Position {
+            col: Column::new(col),
+            row: Row::new(row),
+        }
     }
 
-    pub fn row(&self) -> i8 {
-        self.row.index()
-    }
-
-    pub fn col_and_row(&self) -> (i8, i8) {
-        (self.col(), self.row())
-    }
-
-    pub fn index(&self) -> usize {
-        (self.col() + self.row() * 10) as usize
+    pub fn coordinate(&self) -> (Column, Row) {
+        (self.col, self.row)
     }
 }
 
-impl From<(i8, i8)> for Position {
-    fn from((col, row): (i8, i8)) -> Position {
-        let col = Column::from(col);
-        let row = Row::from(row);
-
-        Position { col, row }
-    }
-}
-
-impl From<(char, i8)> for Position {
-    fn from((col, row): (char, i8)) -> Position {
-        let col = Column::from(col);
-        let row = Row::from(row);
-
-        Position { col, row }
-    }
-}
-
-impl From<usize> for Position {
-    fn from(index: usize) -> Position {
-        let col = (index % 10) as i8;
-        let row = (index / 10) as i8;
-
-        let col = Column::from(col);
-        let row = Row::from(row);
-
+impl From<(Column, Row)> for Position {
+    fn from((col, row): (Column, Row)) -> Position {
         Position { col, row }
     }
 }
 
 impl PartialEq for Position {
     fn eq(&self, other: &Self) -> bool {
-        self.col() == other.col() && self.row() == other.row()
+        self.col == other.col && self.row == other.row
     }
 }
 
@@ -64,175 +36,209 @@ impl Eq for Position {}
 
 impl Hash for Position {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.col().hash(state);
-        self.row().hash(state);
+        self.col.index().hash(state);
+        self.row.index().hash(state);
     }
 }
 
-// --------------------------------------------------------------------
+// ---------------------------------------------------------------------
 
-#[derive(Clone, Copy)]
-struct Column {
-    index: i8,
+#[derive(Clone, Copy, Debug)]
+pub struct Column {
+    index: i32,
 }
 
 impl Column {
-    fn index(&self) -> i8 {
+    fn new(index: char) -> Column {
+        if index < 'a' || 'h' < index {
+            panic!("index out of bounds for Column");
+        }
+        let index = (index as u8 - b'a') as i32;
+        Column { index }
+    }
+
+    fn index(&self) -> i32 {
         self.index
     }
 }
 
-impl From<i8> for Column {
-    fn from(index: i8) -> Column {
-        if index < 0 || 9 < index {
-            panic!("index out of bounds in Column: {}", index);
-        }
-
-        Column { index }
+impl PartialEq for Column {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
     }
 }
 
-impl From<char> for Column {
-    fn from(index: char) -> Column {
-        if index < 'a' || 'h' < index {
-            panic!("index out of bounds in Column: {}", index);
+impl ops::Add<i32> for Column {
+    type Output = Option<Column>;
+
+    fn add(self, rhs: i32) -> Option<Column> {
+        let index = self.index + rhs;
+        if index < 0 || 8 <= index {
+            None
+        } else {
+            Some(Column { index })
         }
-
-        let index = (index as u8 - b'a' + 1) as i8;
-
-        Column { index }
     }
 }
 
-// --------------------------------------------------------------------
+// ---------------------------------------------------------------------
 
-#[derive(Clone, Copy)]
-struct Row {
-    index: i8,
+#[derive(Clone, Copy, Debug)]
+pub struct Row {
+    index: i32,
 }
 
 impl Row {
-    fn index(&self) -> i8 {
+    fn new(index: usize) -> Row {
+        if index < 1 || 8 < index {
+            panic!("index out of bounds for Row");
+        }
+        let index = (index - 1) as i32;
+        Row { index }
+    }
+
+    fn index(&self) -> i32 {
         self.index
     }
 }
 
-impl From<i8> for Row {
-    fn from(index: i8) -> Row {
-        if index < 0 || 9 < index {
-            panic!("index out of bounds in Row: {}", index);
-        }
-
-        Row { index }
+impl PartialEq for Row {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
     }
 }
 
-// ====================================================================
+impl ops::Add<i32> for Row {
+    type Output = Option<Row>;
+
+    fn add(self, rhs: i32) -> Option<Row> {
+        let index = self.index + rhs;
+        if index < 0 || 8 <= index {
+            None
+        } else {
+            Some(Row { index })
+        }
+    }
+}
+
+// =====================================================================
 
 #[cfg(test)]
 mod tests {
     use super::Column;
+    use super::Position;
     use super::Row;
 
-    use super::Position;
-
-    // --------------------------------------------------------
-
     #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn row_from_i8_under_bound() {
-        Row::from(-1);
-    }
-
-    #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn row_from_i8_over_bound() {
-        Row::from(10);
-    }
-
-    #[test]
-    fn row_from_i8() {
-        let row0 = Row::from(0);
-        assert_eq!(row0.index(), 0);
-
-        let row9 = Row::from(9);
-        assert_eq!(row9.index(), 9);
-    }
-
-    // --------------------------------------------------------
-
-    #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn col_from_i8_under_bound() {
-        Column::from(-1);
-    }
-
-    #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn col_from_i8_over_bound() {
-        Column::from(10);
-    }
-
-    #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn col_from_char_under_bound() {
+    #[should_panic(expected = "index out of bounds")]
+    fn column_new_under_bound() {
         let c = (b'a' - 1) as char;
-        Column::from(c);
+        Column::new(c);
     }
 
     #[test]
-    #[should_panic(expected = "out of bounds")]
-    fn col_from_char_over_bound() {
+    #[should_panic(expected = "index out of bounds")]
+    fn column_nwe_over_bound() {
         let c = (b'h' + 1) as char;
-        Column::from(c);
+        Column::new(c);
     }
 
     #[test]
-    fn col_from_i8() {
-        let col0 = Column::from(0);
-        assert_eq!(col0.index(), 0);
-
-        let col9 = Column::from(9);
-        assert_eq!(col9.index(), 9);
+    fn column_index() {
+        let mut index = 0;
+        for c in 'a'..='h' {
+            let col = Column::new(c);
+            assert_eq!(col.index(), index);
+            index += 1;
+        }
     }
 
     #[test]
-    fn col_from_char() {
-        let col1 = Column::from('a');
-        assert_eq!(col1.index(), 1);
+    fn column_add_i32() {
+        let col = Column::new('a');
+        let new_col = col + (-1);
+        assert!(new_col.is_none());
+        let new_col = col + 0;
+        assert_eq!(new_col.unwrap().index(), 0);
+        let new_col = col + 1;
+        assert_eq!(new_col.unwrap().index(), 1);
 
-        let col8 = Column::from('h');
-        assert_eq!(col8.index(), 8);
+        let col = Column::new('h');
+        let new_col = col + (-1);
+        assert_eq!(new_col.unwrap().index(), 6);
+        let new_col = col + 0;
+        assert_eq!(new_col.unwrap().index(), 7);
+        let new_col = col + 1;
+        assert!(new_col.is_none());
     }
 
-    // --------------------------------------------------------
+    // -----------------------------------------------------------------
 
     #[test]
-    fn position_from_char_and_i8() {
-        let pos = Position::from(('a', 1));
-        assert_eq!(pos.col_and_row(), (1, 1));
-
-        let pos = Position::from(('h', 8));
-        assert_eq!(pos.col_and_row(), (8, 8));
-    }
-
-    #[test]
-    fn position_from_i8_and_i8() {
-        let pos = Position::from((0, 0));
-        assert_eq!(pos.index(), 0);
-
-        let pos = Position::from((9, 9));
-        assert_eq!(pos.index(), 99);
+    #[should_panic(expected = "index out of bounds")]
+    fn row_new_under_bound() {
+        Row::new(0);
     }
 
     #[test]
-    fn position_from_usize() {
-        let pos = Position::from(0);
-        assert_eq!(pos.col(), 0);
-        assert_eq!(pos.row(), 0);
+    #[should_panic(expected = "index out of bounds")]
+    fn row_new_over_bound() {
+        Row::new(9);
+    }
 
-        let pos = Position::from(99);
-        assert_eq!(pos.col(), 9);
-        assert_eq!(pos.row(), 9);
+    #[test]
+    fn row_index() {
+        let mut index = 0;
+        for r in 1..=8 {
+            let row = Row::new(r);
+            assert_eq!(row.index(), index);
+            index += 1;
+        }
+    }
+
+    #[test]
+    fn row_add_i32() {
+        let row = Row::new(1);
+        let new_row = row + (-1);
+        assert!(new_row.is_none());
+        let new_row = row + 0;
+        assert_eq!(new_row.unwrap().index(), 0);
+        let new_row = row + 1;
+        assert_eq!(new_row.unwrap().index(), 1);
+
+        let row = Row::new(8);
+        let new_row = row + (-1);
+        assert_eq!(new_row.unwrap().index(), 6);
+        let new_row = row + 0;
+        assert_eq!(new_row.unwrap().index(), 7);
+        let new_row = row + 1;
+        assert!(new_row.is_none());
+    }
+
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn position_new_and_from() {
+        for col in 'a'..='h' {
+            for row in 1..=8 {
+                let pos1 = Position::new(col, row);
+                let col = Column::new(col);
+                let row = Row::new(row);
+                let pos2 = Position::from((col, row));
+                assert_eq!(pos1, pos2);
+            }
+        }
+    }
+
+    #[test]
+    fn position_coordinate() {
+        for col in 'a'..='h' {
+            for row in 1..=8 {
+                let pos = Position::new(col, row);
+                let col = Column::new(col);
+                let row = Row::new(row);
+                assert_eq!(pos.coordinate(), (col, row));
+            }
+        }
     }
 }
