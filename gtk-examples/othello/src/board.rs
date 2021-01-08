@@ -1,5 +1,6 @@
 use crate::position::Coordinate;
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Disk {
@@ -16,7 +17,8 @@ fn flip_disk(disk: &Disk) -> Disk {
 
 // ---------------------------------------------------------------------
 
-pub enum MoveResult {
+#[derive(Debug, PartialEq)]
+pub enum MoveErr {
     NotEmpty,
     NoDiskFlipped,
 }
@@ -58,9 +60,9 @@ impl Board {
         &self,
         coord: Coordinate,
         disk: Disk,
-    ) -> Result<Board, MoveResult> {
+    ) -> Result<Board, MoveErr> {
         if self.get_disk(coord).is_some() {
-            return Err(MoveResult::NotEmpty);
+            return Err(MoveErr::NotEmpty);
         }
 
         let mut board = self.clone();
@@ -95,9 +97,10 @@ impl Board {
         }
 
         if num_flip > 0 {
+            board.place(coord, disk);
             Ok(board)
         } else {
-            Err(MoveResult::NoDiskFlipped)
+            Err(MoveErr::NoDiskFlipped)
         }
     }
 
@@ -137,5 +140,145 @@ impl Board {
         } else {
             None
         }
+    }
+}
+
+impl fmt::Display for Board {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for row in 1..=8 {
+            for col in 'a'..='h' {
+                let coord = Coordinate::new(col, row);
+                let symbol = match self.get_disk(coord) {
+                    None => '.',
+                    Some(Disk::Black) => 'x',
+                    Some(Disk::White) => 'o',
+                };
+                write!(f, "{}", symbol)?;
+                if col == 'h' {
+                    write!(f, " ")?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// =====================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::flip_disk;
+    use super::Disk;
+
+    use super::Board;
+    use super::Coordinate;
+    use super::MoveErr;
+
+    #[test]
+    fn flip_disk_and_disk_eq() {
+        let black = Disk::Black;
+        let white = Disk::White;
+        assert_eq!(flip_disk(&black), white);
+        assert_eq!(flip_disk(&white), black);
+    }
+
+    #[test]
+    fn board_display() {
+        let mut board = Board::new();
+        board.init();
+        let output = "\
+........ ........ ........ ...ox... ...xo... ........ ........ ........ ";
+        assert_eq!(board.to_string(), output);
+    }
+
+    #[test]
+    #[should_panic]
+    fn board_place_not_empty() {
+        let mut board = Board::new();
+        board.init();
+        board.place(Coordinate::new('d', 4), Disk::Black);
+    }
+
+    #[test]
+    #[should_panic]
+    fn board_flip_at_empty() {
+        let mut board = Board::new();
+        board.flip(Coordinate::new('d', 4));
+    }
+
+    #[test]
+    fn board_flip() {
+        let mut board = Board::new();
+        board.init();
+
+        board.flip(Coordinate::new('d', 4));
+        board.flip(Coordinate::new('e', 4));
+        board.flip(Coordinate::new('d', 5));
+        board.flip(Coordinate::new('e', 5));
+
+        let output = "\
+........ ........ ........ ...xo... ...ox... ........ ........ ........ ";
+        assert_eq!(board.to_string(), output);
+    }
+
+    #[test]
+    fn board_abort() {
+        let mut board = Board::new();
+        board.init();
+
+        board.flip(Coordinate::new('d', 4));
+        board.flip(Coordinate::new('e', 4));
+        board.flip(Coordinate::new('d', 5));
+        board.flip(Coordinate::new('e', 5));
+        assert_eq!(board.stack.len(), 4);
+        let output = "\
+........ ........ ........ ...xo... ...ox... ........ ........ ........ ";
+        assert_eq!(board.to_string(), output);
+
+        board.abort();
+        assert_eq!(board.stack.len(), 0);
+        let output = "\
+........ ........ ........ ...ox... ...xo... ........ ........ ........ ";
+        assert_eq!(board.to_string(), output);
+    }
+
+    #[test]
+    fn board_commit() {
+        let mut board = Board::new();
+        board.init();
+
+        board.flip(Coordinate::new('d', 4));
+        board.flip(Coordinate::new('e', 4));
+        board.flip(Coordinate::new('d', 5));
+        board.flip(Coordinate::new('e', 5));
+        assert_eq!(board.stack.len(), 4);
+        let output = "\
+........ ........ ........ ...xo... ...ox... ........ ........ ........ ";
+        assert_eq!(board.to_string(), output);
+
+        board.commit();
+        assert_eq!(board.stack.len(), 0);
+        let output = "\
+........ ........ ........ ...xo... ...ox... ........ ........ ........ ";
+        assert_eq!(board.to_string(), output);
+    }
+
+    #[test]
+    fn board_try_move() {
+        let mut board = Board::new();
+        board.init();
+
+        let result = board.try_move(Coordinate::new('f', 5), Disk::Black);
+        let board = result.unwrap();
+        let output = "\
+........ ........ ........ ...ox... ...xxx.. ........ ........ ........ ";
+        assert_eq!(board.to_string(), output);
+
+        let result = board.try_move(Coordinate::new('f', 5), Disk::White);
+        assert_eq!(result.err(), Some(MoveErr::NotEmpty));
+
+        let result = board.try_move(Coordinate::new('f', 4), Disk::Black);
+        assert_eq!(result.err(), Some(MoveErr::NoDiskFlipped));
     }
 }
