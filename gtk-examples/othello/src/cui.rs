@@ -5,10 +5,12 @@ use std::io::{self, Write};
 
 pub fn run() -> Result<(), &'static str> {
     let mut buffer = String::with_capacity(4096);
-    let game = Game::new();
+    let mut game = Game::new();
+    game.engine.action(Command::Init);
+    game.render();
 
     loop {
-        print!("Command? => ");
+        print!("Command? ");
         if io::stdout().flush().is_err() {
             return Err("Failed to flush in stdout");
         }
@@ -26,6 +28,9 @@ pub fn run() -> Result<(), &'static str> {
                 game.render();
             } else if command == "undo" {
                 game.engine.action(Command::Undo);
+                game.render();
+            } else if command == "pass" {
+                game.engine.action(Command::Pass);
                 game.render();
             } else if command == "move" {
                 match parse_coordinate(iter.next()) {
@@ -78,7 +83,7 @@ impl Game {
     }
 
     pub fn render(&self) {
-        let mut output = String::with_capacity(4096);
+        let mut output = String::with_capacity(1024);
         let board = self.engine.current_board();
 
         output += "   a  b  c  d  e  f  g  h\n";
@@ -96,5 +101,6 @@ impl Game {
             output += "\n";
         }
         println!("{}", output);
+        println!("{}", self.engine.status);
     }
 }
