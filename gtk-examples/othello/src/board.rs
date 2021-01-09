@@ -78,7 +78,7 @@ impl Board {
                     continue;
                 }
                 for offset in 1.. {
-                    if let Ok(coord) = coord + (dx, dy) {
+                    if let Ok(coord) = coord + (dx * offset, dy * offset) {
                         if let Some(disk) = board.get_disk(coord) {
                             if disk == current {
                                 num_flip += board.commit();
