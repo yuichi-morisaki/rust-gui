@@ -8,7 +8,6 @@ pub enum Command {
     Init,
     Quit,
     Undo,
-    Pass,
     Move(char, usize),
 }
 
@@ -17,8 +16,7 @@ pub enum Command {
 pub struct Engine {
     root: Rc<Node>,
     current: Rc<Node>,
-    pub status: String,
-    is_over: bool,
+    pub prompt: String,
 }
 
 impl Engine {
@@ -27,17 +25,13 @@ impl Engine {
         board.init();
         let turn = Side::Dark;
 
-        let node = Node::new(board, turn);
-        let root = Rc::new(node);
+        let root = Rc::new(Node::new(board, turn));
         let current = Rc::clone(&root);
-
-        let status = String::with_capacity(1024);
 
         Engine {
             root,
             current,
-            status,
-            is_over: false,
+            prompt: String::with_capacity(1024),
         }
     }
 
@@ -50,7 +44,6 @@ impl Engine {
             Command::Init => self.init(),
             Command::Quit => self.quit(),
             Command::Undo => self.undo(),
-            Command::Pass => self.pass(),
             Command::Move(row, col) => {
                 let coord = Coordinate::new(row, col);
                 self.try_move(coord);
@@ -62,10 +55,34 @@ impl Engine {
         self.current = Rc::clone(&self.root);
         self.extend_tree();
 
-        self.status.clear();
-        self.status += "Game start! ";
-        self.append_turn_to_status();
-        self.is_over = false;
+        self.update_status(Some("Game start!"));
+    }
+
+    fn try_move(&mut self, coord: Coordinate) {
+        if !self.current.has_any_child() {
+            return;
+        }
+
+        if let Some(node) = self.current.get_child(Some(coord)) {
+            self.current = node;
+            self.extend_tree();
+
+            if let Some(node) = self.current.get_child(None) {
+                self.current = node;
+                self.extend_tree();
+
+                if let Some(_node) = self.current.get_child(None) {
+                    self.current.remove_child(None);
+                    self.current = self.current.get_parent().unwrap();
+                    self.current.remove_child(None);
+                    self.update_status(None);
+                    return;
+                }
+            }
+            self.update_status(None);
+        } else {
+            self.update_status(Some("Can't place there!"));
+        }
     }
 
     fn quit(&self) {
@@ -73,77 +90,46 @@ impl Engine {
     }
 
     fn undo(&mut self) {
-        self.is_over = false;
-        self.status.clear();
-        if let Some(node) = self.current.get_parent() {
-            self.current = node;
-            self.status += "Undid! ";
-            if self.current.has_none_key() {
-                self.append_pass_to_status();
-                return;
+        if let Some(parent) = self.current.get_parent() {
+            self.current = parent;
+            if let Some(_node) = self.current.get_child(None) {
+                let parent = self.current.get_parent().unwrap();
+                self.current = parent;
             }
+            self.update_status(Some("Undo, and "));
         } else {
-            self.status += "Couldn't undo! ";
+            self.update_status(Some("Can't undo!"));
         }
-        self.append_turn_to_status();
     }
 
-    fn pass(&mut self) {
-        if self.is_over {
-            return;
+    fn update_status(&mut self, msg: Option<&str>) {
+        self.prompt.clear();
+
+        if let Some(msg) = msg {
+            self.prompt += msg;
+            self.prompt += " ";
         }
 
-        self.status.clear();
-        if let Some(node) = self.current.get_child(None) {
-            self.current = node;
-            self.extend_tree();
-            if self.current.has_none_key() {
-                self.current.remove_child(None);
-                self.is_over = true;
-                self.status += "Game is over! ";
-                return;
+        if !self.current.has_any_child() {
+            self.prompt += "Game is over!";
+        } else {
+            if let Some(parent) = self.current.get_parent() {
+                if let Some(_node) = parent.get_child(None) {
+                    self.prompt += match parent.turn {
+                        Side::Dark => "Black passed, and ",
+                        Side::Light => "White passed, and ",
+                    };
+                }
             }
-        } else {
-            self.status += "Can't pass! ";
-        }
-        self.append_turn_to_status();
-    }
-
-    fn try_move(&mut self, coord: Coordinate) {
-        if self.is_over {
-            return;
-        }
-
-        self.status.clear();
-        if let Some(node) = self.current.get_child(Some(coord)) {
-            self.current = node;
-            self.extend_tree();
-            if self.current.has_none_key() {
-                self.append_pass_to_status();
-                return;
-            }
-        } else {
-            self.status += "Can't place there! ";
-        }
-        self.append_turn_to_status();
-    }
-
-    fn append_turn_to_status(&mut self) {
-        self.status += match self.current.turn {
-            Side::Dark => "Black's turn",
-            Side::Light => "White's turn",
-        };
-    }
-
-    fn append_pass_to_status(&mut self) {
-        self.status += match self.current.turn {
-            Side::Dark => "Black must pass",
-            Side::Light => "White must pass",
+            self.prompt += match self.current.turn {
+                Side::Dark => "Black's turn.",
+                Side::Light => "White's turn.",
+            };
         }
     }
 
     fn extend_tree(&self) {
-        if self.current.any_child() {
+        if self.current.has_any_child() {
             return;
         }
 
@@ -167,7 +153,7 @@ impl Engine {
             }
         }
 
-        if !self.current.any_child() {
+        if !self.current.has_any_child() {
             let board = self.current.board.clone();
             self.current
                 .insert_child(None, Rc::new(Node::new(board, next_turn)));
@@ -246,16 +232,12 @@ impl Node {
         self.children.borrow_mut().remove(&coord);
     }
 
-    fn any_child(&self) -> bool {
+    fn has_any_child(&self) -> bool {
         self.num_of_children() > 0
     }
 
     fn num_of_children(&self) -> usize {
         self.children.borrow().len()
-    }
-
-    fn has_none_key(&self) -> bool {
-        self.children.borrow().contains_key(&None)
     }
 }
 
@@ -298,8 +280,8 @@ mod tests {
         assert_eq!(parent.board.to_string(), output);
 
         assert!(parent.get_parent().is_none());
-        assert!(parent.any_child());
-        assert!(!child.any_child());
+        assert!(parent.has_any_child());
+        assert!(!child.has_any_child());
     }
 
     #[test]
