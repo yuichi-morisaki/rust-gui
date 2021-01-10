@@ -8,7 +8,7 @@ pub enum Command {
     Init,
     Quit,
     Undo,
-    Move(char, usize),
+    Move(Coordinate),
 }
 
 // ---------------------------------------------------------------------
@@ -44,8 +44,7 @@ impl Engine {
             Command::Init => self.init(),
             Command::Quit => self.quit(),
             Command::Undo => self.undo(),
-            Command::Move(row, col) => {
-                let coord = Coordinate::new(row, col);
+            Command::Move(coord) => {
                 self.try_move(coord);
             }
         }

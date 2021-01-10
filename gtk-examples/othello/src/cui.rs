@@ -35,7 +35,8 @@ pub fn run() -> Result<(), &'static str> {
             } else if command == "move" {
                 match parse_coordinate(iter.next()) {
                     Ok((col, row)) => {
-                        game.engine.action(Command::Move(col, row));
+                        let coord = Coordinate::new(col, row);
+                        game.engine.action(Command::Move(coord));
                         game.render();
                     }
                     Err(s) => println!("{}", s),
