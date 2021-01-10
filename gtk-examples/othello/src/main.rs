@@ -13,7 +13,10 @@ fn main() {
         .get_matches();
 
     if matches.is_present("graph") {
-        gui::main();
+        if let Err(err) = gui::run() {
+            eprintln!("Application error: {}", err);
+            process::exit(1);
+        }
     } else {
         if let Err(err) = cui::run() {
             eprintln!("Application error: {}", err);
